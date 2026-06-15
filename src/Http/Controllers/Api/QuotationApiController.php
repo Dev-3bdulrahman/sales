@@ -3,144 +3,121 @@
 namespace Dev3bdulrahman\Sales\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Traits\HasApiResponse;
+use Dev3bdulrahman\Sales\Http\Requests\Api\StoreQuotationApiRequest;
+use Dev3bdulrahman\Sales\Http\Requests\Api\UpdateQuotationApiRequest;
 use Dev3bdulrahman\Sales\Http\Resources\QuotationResource;
 use Dev3bdulrahman\Sales\Services\QuotationService;
 use Dev3bdulrahman\Sales\Models\Quotation;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class QuotationApiController extends Controller
 {
+    use HasApiResponse;
+
     /**
      * List all quotations.
      */
     public function index(Request $request, QuotationService $service): JsonResponse
     {
+        $this->authorize('viewAny', Quotation::class);
+
         $filters = $request->only(['search', 'status', 'customer_id']);
         $perPage = (int) $request->get('per_page', 10);
         $quotations = $service->listQuotations($filters, $perPage);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Quotations retrieved successfully'),
-            'data' => QuotationResource::collection($quotations->items()),
-            'meta' => [
+        return $this->success(
+            QuotationResource::collection($quotations->items()),
+            __('Quotations retrieved successfully'),
+            200,
+            [
                 'current_page' => $quotations->currentPage(),
                 'last_page' => $quotations->lastPage(),
                 'per_page' => $quotations->perPage(),
                 'total' => $quotations->total(),
-            ],
-            'errors' => []
-        ]);
+            ]
+        );
     }
 
     /**
      * Store a new quotation.
      */
-    public function store(Request $request, QuotationService $service): JsonResponse
+    public function store(StoreQuotationApiRequest $request, QuotationService $service): JsonResponse
     {
-        $validated = $request->validate([
-            'customer_id' => 'required|exists:crm_customers,id',
-            'quotation_number' => 'required|string|max:255',
-            'quotation_date' => 'required|date',
-            'expiry_date' => 'required|date',
-            'status' => 'nullable|string|in:draft,sent,accepted,rejected,expired',
-            'branch_id' => 'nullable|exists:branches,id',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.product_variant_id' => 'nullable|exists:product_variants,id',
-            'items.*.quantity' => 'required|numeric|min:0.0001',
-            'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
-            'items.*.discount_amount' => 'nullable|numeric|min:0',
-        ]);
+        $this->authorize('create', Quotation::class);
 
+        $validated = $request->validated();
         $items = $validated['items'];
         unset($validated['items']);
 
         $quotation = $service->createQuotation($validated, $items);
         $quotation->load('items');
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Quotation created successfully'),
-            'data' => new QuotationResource($quotation),
-            'errors' => []
-        ], 201);
+        return $this->success(
+            new QuotationResource($quotation),
+            __('Quotation created successfully'),
+            201
+        );
     }
 
     /**
      * Show a single quotation.
      */
-    public function show($id, QuotationService $service): JsonResponse
+    public function show(Quotation $quotation): JsonResponse
     {
-        $quotation = Quotation::with('items')->findOrFail($id);
+        $this->authorize('view', $quotation);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Quotation details retrieved'),
-            'data' => new QuotationResource($quotation),
-            'errors' => []
-        ]);
+        $quotation->load('items');
+
+        return $this->success(
+            new QuotationResource($quotation),
+            __('Quotation details retrieved')
+        );
     }
 
     /**
      * Update an existing quotation.
      */
-    public function update($id, Request $request, QuotationService $service): JsonResponse
+    public function update(UpdateQuotationApiRequest $request, Quotation $quotation, QuotationService $service): JsonResponse
     {
-        $validated = $request->validate([
-            'customer_id' => 'required|exists:crm_customers,id',
-            'quotation_number' => 'required|string|max:255',
-            'quotation_date' => 'required|date',
-            'expiry_date' => 'required|date',
-            'status' => 'nullable|string|in:draft,sent,accepted,rejected,expired',
-            'branch_id' => 'nullable|exists:branches,id',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.product_variant_id' => 'nullable|exists:product_variants,id',
-            'items.*.quantity' => 'required|numeric|min:0.0001',
-            'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
-            'items.*.discount_amount' => 'nullable|numeric|min:0',
-        ]);
+        $this->authorize('update', $quotation);
 
-        $items = $validated['items'];
+        $validated = $request->validated();
+        $items = $validated['items'] ?? null;
         unset($validated['items']);
 
-        $quotation = $service->updateQuotation($id, $validated, $items);
+        $quotation = $service->updateQuotation($quotation->id, $validated, $items ?? []);
         $quotation->load('items');
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Quotation updated successfully'),
-            'data' => new QuotationResource($quotation),
-            'errors' => []
-        ]);
+        return $this->success(
+            new QuotationResource($quotation),
+            __('Quotation updated successfully')
+        );
     }
 
     /**
      * Delete a quotation.
      */
-    public function destroy($id, QuotationService $service): JsonResponse
+    public function destroy(Quotation $quotation, QuotationService $service): JsonResponse
     {
-        $service->deleteQuotation($id);
+        $this->authorize('delete', $quotation);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Quotation deleted successfully'),
-            'data' => null,
-            'errors' => []
-        ]);
+        $service->deleteQuotation($quotation->id);
+
+        return $this->success(
+            null,
+            __('Quotation deleted successfully')
+        );
     }
 
     /**
      * Convert Quotation to Order.
      */
-    public function convertToOrder($id, Request $request, QuotationService $service): JsonResponse
+    public function convertToOrder(Quotation $quotation, Request $request, QuotationService $service): JsonResponse
     {
+        $this->authorize('create', \Dev3bdulrahman\Sales\Models\SalesOrder::class);
+
         $validated = $request->validate([
             'order_number' => 'nullable|string|max:255',
             'order_date' => 'nullable|date',
@@ -148,16 +125,14 @@ class QuotationApiController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        $order = $service->convertToOrder($id, $validated);
+        $order = $service->convertToOrder($quotation->id, $validated);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Quotation converted to Order successfully'),
-            'data' => [
+        return $this->success(
+            [
                 'order_id' => $order->id,
                 'order_number' => $order->order_number,
             ],
-            'errors' => []
-        ]);
+            __('Quotation converted to Order successfully')
+        );
     }
 }

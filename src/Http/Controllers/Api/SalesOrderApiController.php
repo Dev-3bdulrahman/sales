@@ -3,146 +3,121 @@
 namespace Dev3bdulrahman\Sales\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Traits\HasApiResponse;
+use Dev3bdulrahman\Sales\Http\Requests\Api\StoreSalesOrderApiRequest;
+use Dev3bdulrahman\Sales\Http\Requests\Api\UpdateSalesOrderApiRequest;
 use Dev3bdulrahman\Sales\Http\Resources\SalesOrderResource;
 use Dev3bdulrahman\Sales\Services\SalesOrderService;
 use Dev3bdulrahman\Sales\Models\SalesOrder;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class SalesOrderApiController extends Controller
 {
+    use HasApiResponse;
+
     /**
      * List all orders.
      */
     public function index(Request $request, SalesOrderService $service): JsonResponse
     {
+        $this->authorize('viewAny', SalesOrder::class);
+
         $filters = $request->only(['search', 'status', 'customer_id']);
         $perPage = (int) $request->get('per_page', 10);
         $orders = $service->listOrders($filters, $perPage);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Orders retrieved successfully'),
-            'data' => SalesOrderResource::collection($orders->items()),
-            'meta' => [
+        return $this->success(
+            SalesOrderResource::collection($orders->items()),
+            __('Sales Orders retrieved successfully'),
+            200,
+            [
                 'current_page' => $orders->currentPage(),
                 'last_page' => $orders->lastPage(),
                 'per_page' => $orders->perPage(),
                 'total' => $orders->total(),
-            ],
-            'errors' => []
-        ]);
+            ]
+        );
     }
 
     /**
      * Store a new sales order.
      */
-    public function store(Request $request, SalesOrderService $service): JsonResponse
+    public function store(StoreSalesOrderApiRequest $request, SalesOrderService $service): JsonResponse
     {
-        $validated = $request->validate([
-            'customer_id' => 'required|exists:crm_customers,id',
-            'quotation_id' => 'nullable|exists:sales_quotations,id',
-            'order_number' => 'required|string|max:255',
-            'order_date' => 'required|date',
-            'delivery_date' => 'nullable|date',
-            'status' => 'nullable|string|in:draft,pending,confirmed,processing,shipped,delivered,cancelled',
-            'branch_id' => 'nullable|exists:branches,id',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.product_variant_id' => 'nullable|exists:product_variants,id',
-            'items.*.quantity' => 'required|numeric|min:0.0001',
-            'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
-            'items.*.discount_amount' => 'nullable|numeric|min:0',
-        ]);
+        $this->authorize('create', SalesOrder::class);
 
+        $validated = $request->validated();
         $items = $validated['items'];
         unset($validated['items']);
 
         $order = $service->createOrder($validated, $items);
         $order->load('items');
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Order created successfully'),
-            'data' => new SalesOrderResource($order),
-            'errors' => []
-        ], 201);
+        return $this->success(
+            new SalesOrderResource($order),
+            __('Sales Order created successfully'),
+            201
+        );
     }
 
     /**
      * Show a single order.
      */
-    public function show($id, SalesOrderService $service): JsonResponse
+    public function show(SalesOrder $salesOrder): JsonResponse
     {
-        $order = SalesOrder::with('items')->findOrFail($id);
+        $this->authorize('view', $salesOrder);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Order details retrieved'),
-            'data' => new SalesOrderResource($order),
-            'errors' => []
-        ]);
+        $salesOrder->load('items');
+
+        return $this->success(
+            new SalesOrderResource($salesOrder),
+            __('Sales Order details retrieved')
+        );
     }
 
     /**
      * Update an existing order.
      */
-    public function update($id, Request $request, SalesOrderService $service): JsonResponse
+    public function update(UpdateSalesOrderApiRequest $request, SalesOrder $salesOrder, SalesOrderService $service): JsonResponse
     {
-        $validated = $request->validate([
-            'customer_id' => 'required|exists:crm_customers,id',
-            'quotation_id' => 'nullable|exists:sales_quotations,id',
-            'order_number' => 'required|string|max:255',
-            'order_date' => 'required|date',
-            'delivery_date' => 'nullable|date',
-            'status' => 'nullable|string|in:draft,pending,confirmed,processing,shipped,delivered,cancelled',
-            'branch_id' => 'nullable|exists:branches,id',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.product_variant_id' => 'nullable|exists:product_variants,id',
-            'items.*.quantity' => 'required|numeric|min:0.0001',
-            'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
-            'items.*.discount_amount' => 'nullable|numeric|min:0',
-        ]);
+        $this->authorize('update', $salesOrder);
 
-        $items = $validated['items'];
+        $validated = $request->validated();
+        $items = $validated['items'] ?? null;
         unset($validated['items']);
 
-        $order = $service->updateOrder($id, $validated, $items);
+        $order = $service->updateOrder($salesOrder->id, $validated, $items ?? []);
         $order->load('items');
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Order updated successfully'),
-            'data' => new SalesOrderResource($order),
-            'errors' => []
-        ]);
+        return $this->success(
+            new SalesOrderResource($order),
+            __('Sales Order updated successfully')
+        );
     }
 
     /**
      * Delete an order.
      */
-    public function destroy($id, SalesOrderService $service): JsonResponse
+    public function destroy(SalesOrder $salesOrder, SalesOrderService $service): JsonResponse
     {
-        $service->deleteOrder($id);
+        $this->authorize('delete', $salesOrder);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Order deleted successfully'),
-            'data' => null,
-            'errors' => []
-        ]);
+        $service->deleteOrder($salesOrder->id);
+
+        return $this->success(
+            null,
+            __('Sales Order deleted successfully')
+        );
     }
 
     /**
      * Convert Order to Invoice.
      */
-    public function convertToInvoice($id, Request $request, SalesOrderService $service): JsonResponse
+    public function convertToInvoice(SalesOrder $salesOrder, Request $request, SalesOrderService $service): JsonResponse
     {
+        $this->authorize('create', \Dev3bdulrahman\Sales\Models\Invoice::class);
+
         $validated = $request->validate([
             'invoice_number' => 'nullable|string|max:255',
             'invoice_date' => 'nullable|date',
@@ -150,16 +125,14 @@ class SalesOrderApiController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        $invoice = $service->convertToInvoice($id, $validated);
+        $invoice = $service->convertToInvoice($salesOrder->id, $validated);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Order converted to Invoice successfully'),
-            'data' => [
+        return $this->success(
+            [
                 'invoice_id' => $invoice->id,
                 'invoice_number' => $invoice->invoice_number,
             ],
-            'errors' => []
-        ]);
+            __('Sales Order converted to Invoice successfully')
+        );
     }
 }

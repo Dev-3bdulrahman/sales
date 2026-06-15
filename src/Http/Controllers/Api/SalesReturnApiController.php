@@ -3,100 +3,114 @@
 namespace Dev3bdulrahman\Sales\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Traits\HasApiResponse;
+use Dev3bdulrahman\Sales\Events\SalesReturnCreated;
+use Dev3bdulrahman\Sales\Http\Requests\Api\StoreSalesReturnApiRequest;
+use Dev3bdulrahman\Sales\Http\Requests\Api\UpdateSalesReturnApiRequest;
 use Dev3bdulrahman\Sales\Http\Resources\SalesReturnResource;
 use Dev3bdulrahman\Sales\Services\SalesReturnService;
 use Dev3bdulrahman\Sales\Models\SalesReturn;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class SalesReturnApiController extends Controller
 {
+    use HasApiResponse;
+
     /**
      * List all returns.
      */
     public function index(Request $request, SalesReturnService $service): JsonResponse
     {
+        $this->authorize('viewAny', SalesReturn::class);
+
         $filters = $request->only(['search', 'status', 'customer_id']);
         $perPage = (int) $request->get('per_page', 10);
         $returns = $service->listReturns($filters, $perPage);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Returns retrieved successfully'),
-            'data' => SalesReturnResource::collection($returns->items()),
-            'meta' => [
+        return $this->success(
+            SalesReturnResource::collection($returns->items()),
+            __('Sales Returns retrieved successfully'),
+            200,
+            [
                 'current_page' => $returns->currentPage(),
                 'last_page' => $returns->lastPage(),
                 'per_page' => $returns->perPage(),
                 'total' => $returns->total(),
-            ],
-            'errors' => []
-        ]);
+            ]
+        );
     }
 
     /**
      * Store a new return.
      */
-    public function store(Request $request, SalesReturnService $service): JsonResponse
+    public function store(StoreSalesReturnApiRequest $request, SalesReturnService $service): JsonResponse
     {
-        $validated = $request->validate([
-            'customer_id' => 'required|exists:crm_customers,id',
-            'invoice_id' => 'nullable|exists:sales_invoices,id',
-            'return_number' => 'required|string|max:255',
-            'return_date' => 'required|date',
-            'status' => 'nullable|string|in:pending,approved,rejected,completed',
-            'branch_id' => 'nullable|exists:branches,id',
-            'reason' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.product_variant_id' => 'nullable|exists:product_variants,id',
-            'items.*.quantity' => 'required|numeric|min:0.0001',
-            'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
-            'items.*.discount_amount' => 'nullable|numeric|min:0',
-        ]);
+        $this->authorize('create', SalesReturn::class);
 
+        $validated = $request->validated();
         $items = $validated['items'];
         unset($validated['items']);
 
         $return = $service->createReturn($validated, $items);
         $return->load('items');
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Return created successfully'),
-            'data' => new SalesReturnResource($return),
-            'errors' => []
-        ], 201);
+        SalesReturnCreated::dispatch($return, auth()->id(), auth()->user()->company_id);
+
+        return $this->success(
+            new SalesReturnResource($return),
+            __('Sales Return created successfully'),
+            201
+        );
     }
 
     /**
      * Show a single return.
      */
-    public function show($id, SalesReturnService $service): JsonResponse
+    public function show(SalesReturn $salesReturn): JsonResponse
     {
-        $return = SalesReturn::with('items')->findOrFail($id);
+        $this->authorize('view', $salesReturn);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Return details retrieved'),
-            'data' => new SalesReturnResource($return),
-            'errors' => []
-        ]);
+        $salesReturn->load('items');
+
+        return $this->success(
+            new SalesReturnResource($salesReturn),
+            __('Sales Return details retrieved')
+        );
+    }
+
+    /**
+     * Update an existing return.
+     */
+    public function update(UpdateSalesReturnApiRequest $request, SalesReturn $salesReturn, SalesReturnService $service): JsonResponse
+    {
+        $this->authorize('update', $salesReturn);
+
+        $validated = $request->validated();
+        $items = $validated['items'] ?? null;
+        unset($validated['items']);
+
+        $return = $service->updateReturn($salesReturn->id, $validated, $items ?? []);
+        $return->load('items');
+
+        return $this->success(
+            new SalesReturnResource($return),
+            __('Sales Return updated successfully')
+        );
     }
 
     /**
      * Delete a return.
      */
-    public function destroy($id, SalesReturnService $service): JsonResponse
+    public function destroy(SalesReturn $salesReturn, SalesReturnService $service): JsonResponse
     {
-        $service->deleteReturn($id);
+        $this->authorize('delete', $salesReturn);
 
-        return response()->json([
-            'success' => true,
-            'message' => __('Sales Return deleted successfully'),
-            'data' => null,
-            'errors' => []
-        ]);
+        $service->deleteReturn($salesReturn->id);
+
+        return $this->success(
+            null,
+            __('Sales Return deleted successfully')
+        );
     }
 }

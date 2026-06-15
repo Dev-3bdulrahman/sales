@@ -2,7 +2,25 @@
 
 namespace Dev3bdulrahman\Sales;
 
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Dev3bdulrahman\Sales\Events\InvoiceIssued;
+use Dev3bdulrahman\Sales\Events\PaymentReceived;
+use Dev3bdulrahman\Sales\Events\QuotationApproved;
+use Dev3bdulrahman\Sales\Listeners\LogInvoiceIssued;
+use Dev3bdulrahman\Sales\Listeners\LogQuotationApproval;
+use Dev3bdulrahman\Sales\Listeners\UpdateInvoiceOnPayment;
+use Dev3bdulrahman\Sales\Models\Invoice;
+use Dev3bdulrahman\Sales\Models\Payment;
+use Dev3bdulrahman\Sales\Models\Quotation;
+use Dev3bdulrahman\Sales\Models\SalesOrder;
+use Dev3bdulrahman\Sales\Models\SalesReturn;
+use Dev3bdulrahman\Sales\Policies\InvoicePolicy;
+use Dev3bdulrahman\Sales\Policies\PaymentPolicy;
+use Dev3bdulrahman\Sales\Policies\QuotationPolicy;
+use Dev3bdulrahman\Sales\Policies\SalesOrderPolicy;
+use Dev3bdulrahman\Sales\Policies\SalesReturnPolicy;
 
 class SalesServiceProvider extends ServiceProvider
 {
@@ -31,6 +49,18 @@ class SalesServiceProvider extends ServiceProvider
 
         // Load package translations
         $this->loadTranslationsFrom(__DIR__ . '/Translations', 'sales');
+
+        // Register Policies
+        Gate::policy(Quotation::class, QuotationPolicy::class);
+        Gate::policy(SalesOrder::class, SalesOrderPolicy::class);
+        Gate::policy(Invoice::class, InvoicePolicy::class);
+        Gate::policy(Payment::class, PaymentPolicy::class);
+        Gate::policy(SalesReturn::class, SalesReturnPolicy::class);
+
+        // Register Event Listeners
+        Event::listen(QuotationApproved::class, LogQuotationApproval::class);
+        Event::listen(InvoiceIssued::class, LogInvoiceIssued::class);
+        Event::listen(PaymentReceived::class, UpdateInvoiceOnPayment::class);
 
         // Register Livewire Components
         if (class_exists(\Livewire\Livewire::class)) {
