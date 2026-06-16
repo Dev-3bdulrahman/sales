@@ -1,0 +1,11 @@
+{
+    "name": "Sales",
+    "slug": "sales",
+    "version": "1.0.0",
+    "description": "Sales, Quotations & Invoicing",
+    "description_ar": "المبيعات وعروض الأسعار والفوترة",
+    "is_active": true,
+    "provider": "Dev3bdulrahman\\Sales\\SalesServiceProvider",
+    "dependencies": [],
+    "order": 2
+}
