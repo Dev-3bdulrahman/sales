@@ -1,8 +1,8 @@
 {
   "name": "dev-3bdulrahman/sales",
-  "description": "A Sales module for Laravel ERP — quotations, sales orders, invoices, payments, returns & commissions.",
+  "description": "A Sales module for Laravel ERP \u2014 quotations, sales orders, invoices, payments, returns & commissions.",
   "type": "library",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "license": "MIT",
   "authors": [
     {
